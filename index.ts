@@ -5,7 +5,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { createConfigSchema, resolveConfig } from "./src/config.js";
 import { createLeadQualifierService } from "./src/service.js";
 import { registerLeadQualifierTools } from "./src/tools.js";
-import { leadQualifierCli } from "./src/cli.js";
+import { createLeadQualifierCli } from "./src/cli.js";
 
 const plugin = {
   id: "lead-qualifier",
@@ -37,7 +37,7 @@ const plugin = {
     registerLeadQualifierTools(api, { stateDir, cfg, api });
 
     // CLI commands: `openclaw lead-qualifier ...`
-    api.registerCli(leadQualifierCli, { commands: ["lead-qualifier"] });
+    api.registerCli(createLeadQualifierCli(cfg, api), { commands: ["lead-qualifier"] });
 
     api.logger.info("lead-qualifier: plugin registered");
   },
