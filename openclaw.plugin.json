@@ -1,0 +1,83 @@
+{
+  "id": "lead-qualifier",
+  "name": "Lead Qualifier",
+  "description": "Autonomous B2B agent-to-agent lead qualification. Pitches, qualifies prospects, and books meetings — only pings you when a warm lead is confirmed.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["pitch"],
+    "properties": {
+      "pitch": {
+        "type": "string",
+        "description": "Your sales pitch / ICP description shown to the qualification LLM."
+      },
+      "anthropicApiKey": {
+        "type": "string",
+        "description": "Anthropic API key. Falls back to ANTHROPIC_API_KEY env var."
+      },
+      "qualificationModel": {
+        "type": "string",
+        "description": "Claude model for qualification (default: claude-haiku-4-5-20251001)."
+      },
+      "calApiKey": {
+        "type": "string",
+        "description": "Cal.com API key for booking meetings."
+      },
+      "calEventTypeId": {
+        "type": "string",
+        "description": "Cal.com event type ID or slug (e.g. '30min')."
+      },
+      "hubspotToken": {
+        "type": "string",
+        "description": "HubSpot private app token for CRM write-back."
+      },
+      "notifyChannel": {
+        "type": "string",
+        "description": "Channel to send human notifications on warm leads (slack, telegram, discord, msteams)."
+      },
+      "notifyTarget": {
+        "type": "string",
+        "description": "Recipient ID for human notifications (Slack user ID, Telegram chat ID, etc.)."
+      },
+      "maxTurns": {
+        "type": "number",
+        "description": "Max qualification turns before auto-escalating (default: 8)."
+      },
+      "a2aSignatures": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Extra phrases to detect agent-to-agent conversations."
+      }
+    }
+  },
+  "uiHints": {
+    "pitch": {
+      "label": "Sales Pitch / ICP",
+      "help": "Describe your product and ideal customer. The qualification agent uses this as its knowledge base."
+    },
+    "anthropicApiKey": {
+      "label": "Anthropic API Key",
+      "sensitive": true
+    },
+    "calApiKey": {
+      "label": "Cal.com API Key",
+      "sensitive": true
+    },
+    "hubspotToken": {
+      "label": "HubSpot Token",
+      "sensitive": true
+    },
+    "notifyChannel": {
+      "label": "Notify Channel",
+      "help": "Where you get pinged when a meeting is booked (slack, telegram, discord, msteams)"
+    },
+    "notifyTarget": {
+      "label": "Notify Target ID",
+      "help": "Your user/channel ID on the notify channel"
+    },
+    "maxTurns": {
+      "label": "Max Turns",
+      "help": "How many back-and-forth messages before auto-escalating to you (default: 8)"
+    }
+  }
+}
