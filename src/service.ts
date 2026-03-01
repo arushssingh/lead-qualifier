@@ -109,7 +109,7 @@ async function handleProspectReply(
       a2aDetected: prospect.a2aDetected,
       turns: prospect.turns,
       latestProspectMessage: inboundContent,
-      anthropicApiKey: cfg.anthropicApiKey,
+      geminiApiKey: cfg.geminiApiKey,
       model: cfg.qualificationModel,
     });
   } catch (err) {

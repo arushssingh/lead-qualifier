@@ -1,8 +1,11 @@
-// Autonomous LLM qualification loop.
-// Uses the Anthropic SDK directly — one API call per conversation turn.
-// Returns a structured decision the caller dispatches.
+// Autonomous LLM qualification loop using Google Gemini.
+// One API call per conversation turn — returns a structured decision.
 
-import Anthropic from "@anthropic-ai/sdk";
+import {
+  GoogleGenerativeAI,
+  type FunctionDeclaration,
+  type Tool,
+} from "@google/generative-ai";
 import type { ConversationTurn } from "./campaign-store.js";
 
 export type QualificationDecision =
@@ -19,7 +22,7 @@ export type QualificationContext = {
   a2aDetected: boolean;
   turns: ConversationTurn[];
   latestProspectMessage: string;
-  anthropicApiKey: string;
+  geminiApiKey: string;
   model: string;
 };
 
@@ -31,35 +34,35 @@ const SYSTEM_PROMPT = `You are an autonomous B2B sales qualification agent. Your
 4. If qualified and interested, propose and book a meeting
 5. If clearly not a fit, politely disengage
 
-IMPORTANT RULES:
+RULES:
 - Be conversational, professional, and brief (2-4 sentences per reply)
 - Never make up information not in the pitch context
-- If the prospect asks something outside your knowledge, say you'll have a human expert follow up
-- If you detect you're talking to an AI agent/bot, acknowledge it briefly and continue — AI gatekeepers still route to human decision-makers
-- You MUST call exactly one tool to complete your response — never reply with plain text
+- If the prospect asks something outside your knowledge, say you will have a human expert follow up
+- If you detect you are talking to an AI agent or bot, acknowledge it briefly and continue
+- You MUST call exactly one function to complete your response
 
 QUALIFICATION SIGNALS:
-- Budget: Do they have budget allocated? Do they mention cost concerns?
-- Authority: Are they a decision-maker or influencer?
+- Budget: Do they have budget allocated?
+- Authority: Are they a decision-maker?
 - Need: Is there a clear pain point your product solves?
-- Timeline: Are they looking to buy now, next quarter, or "someday"?
+- Timeline: Are they looking to buy now or someday?
 
-DECISION GUIDE:
-- reply_to_prospect: Continue the conversation — ask a BANT question or answer their question
-- book_meeting: They've shown clear interest + have budget + authority → schedule time
-- escalate_to_human: Complex legal/technical asks, negative sentiment, or explicit request for human
-- close_disqualified: Wrong industry, no budget, no authority, not interested after 2+ exchanges`;
+WHEN TO USE EACH FUNCTION:
+- reply_to_prospect: Continue the conversation, ask a BANT question, or answer their question
+- book_meeting: They show clear interest, have budget, and authority — schedule time
+- escalate_to_human: Complex legal or technical asks, or explicit request for a human
+- close_disqualified: Wrong industry, no budget, no authority, or not interested after multiple exchanges`;
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: "reply_to_prospect",
     description: "Send a reply continuing the qualification conversation",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: "object" as const,
       properties: {
         message: {
           type: "string",
-          description: "The reply message to send to the prospect (2-4 sentences, professional tone)",
+          description: "The reply message to send (2-4 sentences, professional tone)",
         },
       },
       required: ["message"],
@@ -67,10 +70,9 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "book_meeting",
-    description:
-      "Propose and book a meeting with the prospect. Use this when they show clear buying intent.",
-    input_schema: {
-      type: "object",
+    description: "Propose a meeting when the prospect shows clear buying intent",
+    parameters: {
+      type: "object" as const,
       properties: {
         prospectEmail: {
           type: "string",
@@ -78,12 +80,11 @@ const TOOLS: Anthropic.Tool[] = [
         },
         preferredSlot: {
           type: "string",
-          description: "Optional preferred meeting time in ISO 8601 format (e.g. 2026-03-10T14:00:00Z)",
+          description: "Optional preferred time in ISO 8601 format",
         },
         bookingMessage: {
           type: "string",
-          description:
-            "Short message to send to the prospect when proposing the meeting (1-2 sentences)",
+          description: "Short message to send when proposing the meeting (1-2 sentences)",
         },
       },
       required: ["prospectEmail"],
@@ -91,18 +92,17 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "escalate_to_human",
-    description:
-      "Hand off to a human sales rep — use for complex asks, legal questions, or very hot leads",
-    input_schema: {
-      type: "object",
+    description: "Hand off to a human sales rep for complex asks or very hot leads",
+    parameters: {
+      type: "object" as const,
       properties: {
         reason: {
           type: "string",
-          description: "Why you are escalating (brief, for the human operator)",
+          description: "Why you are escalating",
         },
         summary: {
           type: "string",
-          description: "1-3 sentence summary of the conversation so far",
+          description: "1-3 sentence summary of the conversation",
         },
       },
       required: ["reason", "summary"],
@@ -111,14 +111,14 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "close_disqualified",
     description: "End the conversation — prospect is not a fit or not interested",
-    input_schema: {
-      type: "object",
+    parameters: {
+      type: "object" as const,
       properties: {
         reason: {
           type: "string",
           description: "Why this prospect is being closed as disqualified",
         },
-        farewell_message: {
+        farewellMessage: {
           type: "string",
           description: "Optional polite closing message to send to the prospect",
         },
@@ -128,102 +128,84 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-function buildMessages(ctx: QualificationContext): Anthropic.MessageParam[] {
-  const messages: Anthropic.MessageParam[] = [];
-
-  // Build conversation history
-  for (const turn of ctx.turns) {
-    messages.push({
-      role: turn.role === "agent" ? "assistant" : "user",
-      content: turn.content,
-    });
-  }
-
-  // Current prospect message (may already be in turns, but we always add it explicitly
-  // if turns is empty or the last turn is from the agent)
-  const lastTurn = ctx.turns[ctx.turns.length - 1];
-  if (!lastTurn || lastTurn.role === "agent") {
-    messages.push({
-      role: "user",
-      content: ctx.latestProspectMessage,
-    });
-  }
-
-  return messages;
-}
+const GEMINI_TOOL: Tool = { functionDeclarations: TOOL_DECLARATIONS };
 
 function buildSystemPrompt(ctx: QualificationContext): string {
-  const parts = [SYSTEM_PROMPT, `\n\n## YOUR PITCH / ICP\n${ctx.pitch}`];
-
-  if (ctx.companyName) parts.push(`\n## PROSPECT COMPANY\n${ctx.companyName}`);
-  if (ctx.contactName) parts.push(`\n## PROSPECT CONTACT\n${ctx.contactName}`);
-  if (ctx.prospectEmail) parts.push(`\n## PROSPECT EMAIL\n${ctx.prospectEmail}`);
+  const parts = [SYSTEM_PROMPT, `\n\nYOUR PITCH / ICP:\n${ctx.pitch}`];
+  if (ctx.companyName) parts.push(`\nPROSPECT COMPANY: ${ctx.companyName}`);
+  if (ctx.contactName) parts.push(`\nPROSPECT CONTACT: ${ctx.contactName}`);
+  if (ctx.prospectEmail) parts.push(`\nPROSPECT EMAIL: ${ctx.prospectEmail}`);
   if (ctx.a2aDetected) {
     parts.push(
-      `\n## NOTE\nYou are communicating with an AI agent/gatekeeper. Continue the qualification — AI gatekeepers often route to human decision-makers.`,
+      `\nNOTE: You are communicating with an AI agent or gatekeeper. Continue qualification — AI gatekeepers route to human decision-makers.`,
     );
   }
-
   return parts.join("");
 }
 
 /**
- * Run one qualification turn and return a structured decision.
- * This is the core LLM call — kept stateless so the service can manage conversation state.
+ * Run one qualification turn using Gemini and return a structured decision.
  */
 export async function runQualificationTurn(
   ctx: QualificationContext,
 ): Promise<QualificationDecision> {
-  const client = new Anthropic({ apiKey: ctx.anthropicApiKey });
+  const genAI = new GoogleGenerativeAI(ctx.geminiApiKey);
 
-  const response = await client.messages.create({
+  const model = genAI.getGenerativeModel({
     model: ctx.model,
-    max_tokens: 512,
-    system: buildSystemPrompt(ctx),
-    messages: buildMessages(ctx),
-    tools: TOOLS,
-    tool_choice: { type: "any" }, // Force tool use — no plain text replies
+    systemInstruction: buildSystemPrompt(ctx),
+    tools: [GEMINI_TOOL],
+    toolConfig: { functionCallingConfig: { mode: "ANY" as const } },
   });
 
-  // Find the first tool_use block
-  const toolUse = response.content.find((block) => block.type === "tool_use");
+  // Build chat history from past turns (all except the latest prospect message)
+  const history = ctx.turns.map((turn) => ({
+    role: turn.role === "agent" ? ("model" as const) : ("user" as const),
+    parts: [{ text: turn.content }],
+  }));
 
-  if (!toolUse || toolUse.type !== "tool_use") {
-    // Fallback: if the model returns text despite tool_choice:any, wrap it as a reply
-    const textBlock = response.content.find((b) => b.type === "text");
-    const text = textBlock && textBlock.type === "text" ? textBlock.text : "Thank you for your message. I'll follow up shortly.";
-    return { action: "reply", message: text };
+  const chat = model.startChat({ history });
+  const result = await chat.sendMessage(ctx.latestProspectMessage);
+  const response = result.response;
+
+  // Find the first function call
+  const fnCall = response.functionCalls()?.[0];
+
+  if (!fnCall) {
+    // Fallback: model returned text instead of a function call
+    const text = response.text();
+    return { action: "reply", message: text || "Thank you, I will be in touch." };
   }
 
-  const input = toolUse.input as Record<string, unknown>;
+  const args = fnCall.args as Record<string, unknown>;
 
-  switch (toolUse.name) {
+  switch (fnCall.name) {
     case "reply_to_prospect":
-      return { action: "reply", message: String(input["message"] ?? "") };
+      return { action: "reply", message: String(args["message"] ?? "") };
 
     case "book_meeting":
       return {
         action: "book_meeting",
-        prospectEmail: String(input["prospectEmail"] ?? ctx.prospectEmail ?? ""),
+        prospectEmail: String(args["prospectEmail"] ?? ctx.prospectEmail ?? ""),
         preferredSlot:
-          typeof input["preferredSlot"] === "string" ? input["preferredSlot"] : undefined,
+          typeof args["preferredSlot"] === "string" ? args["preferredSlot"] : undefined,
       };
 
     case "escalate_to_human":
       return {
         action: "escalate",
-        reason: String(input["reason"] ?? "Agent requested escalation"),
-        summary: String(input["summary"] ?? ""),
+        reason: String(args["reason"] ?? "Agent requested escalation"),
+        summary: String(args["summary"] ?? ""),
       };
 
     case "close_disqualified":
       return {
         action: "close_disqualified",
-        reason: String(input["reason"] ?? "Not a fit"),
+        reason: String(args["reason"] ?? "Not a fit"),
       };
 
     default:
-      return { action: "reply", message: "Thank you, I'll be in touch." };
+      return { action: "reply", message: "Thank you, I will follow up shortly." };
   }
 }
 
@@ -234,38 +216,33 @@ export async function generateOutreachMessage(params: {
   pitch: string;
   companyName?: string;
   contactName?: string;
-  anthropicApiKey: string;
+  geminiApiKey: string;
   model: string;
 }): Promise<string> {
-  const client = new Anthropic({ apiKey: params.anthropicApiKey });
+  const genAI = new GoogleGenerativeAI(params.geminiApiKey);
 
-  const systemPrompt = `You are a B2B sales agent. Write a brief, personalized cold outreach message.
-
+  const model = genAI.getGenerativeModel({
+    model: params.model,
+    systemInstruction: `You are a B2B sales agent. Write a brief personalized cold outreach message.
 RULES:
 - 2-3 short sentences maximum
-- Lead with a specific value proposition (not generic)
-- End with a soft question to start a conversation
-- Do NOT be pushy, do NOT use buzzwords like "synergy" or "disruptive"
+- Lead with a specific value proposition, not generic filler
+- End with a soft open question to start a conversation
 - Sound like a real person, not a template
+- Do NOT use buzzwords like synergy or disruptive
 
-## YOUR PITCH / ICP
-${params.pitch}`;
+YOUR PITCH / ICP:
+${params.pitch}`,
+  });
 
-  const userPrompt = [
-    `Write a cold outreach message`,
+  const prompt = [
+    "Write a cold outreach message",
     params.companyName ? `to ${params.companyName}` : "",
     params.contactName ? `(contact: ${params.contactName})` : "",
   ]
     .filter(Boolean)
     .join(" ");
 
-  const response = await client.messages.create({
-    model: params.model,
-    max_tokens: 256,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userPrompt }],
-  });
-
-  const text = response.content.find((b) => b.type === "text");
-  return text && text.type === "text" ? text.text : params.pitch.split("\n")[0] ?? params.pitch;
+  const result = await model.generateContent(prompt);
+  return result.response.text() || params.pitch.split("\n")[0] || params.pitch;
 }

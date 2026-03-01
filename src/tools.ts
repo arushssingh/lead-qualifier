@@ -121,7 +121,7 @@ export function registerLeadQualifierTools(api: OpenClawPluginApi, deps: ToolDep
         pitch: cfg.pitch,
         companyName: params.companyName,
         contactName: params.contactName,
-        anthropicApiKey: cfg.anthropicApiKey,
+        geminiApiKey: cfg.geminiApiKey,
         model: cfg.qualificationModel,
       });
 

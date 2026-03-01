@@ -11,13 +11,13 @@
         "type": "string",
         "description": "Your sales pitch / ICP description shown to the qualification LLM."
       },
-      "anthropicApiKey": {
+      "geminiApiKey": {
         "type": "string",
-        "description": "Anthropic API key. Falls back to ANTHROPIC_API_KEY env var."
+        "description": "Google Gemini API key. Falls back to GEMINI_API_KEY env var."
       },
       "qualificationModel": {
         "type": "string",
-        "description": "Claude model for qualification (default: claude-haiku-4-5-20251001)."
+        "description": "Gemini model for qualification (default: gemini-2.0-flash)."
       },
       "calApiKey": {
         "type": "string",
@@ -55,8 +55,8 @@
       "label": "Sales Pitch / ICP",
       "help": "Describe your product and ideal customer. The qualification agent uses this as its knowledge base."
     },
-    "anthropicApiKey": {
-      "label": "Anthropic API Key",
+    "geminiApiKey": {
+      "label": "Gemini API Key",
       "sensitive": true
     },
     "calApiKey": {

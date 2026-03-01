@@ -4,9 +4,9 @@
 export type LeadQualifierConfig = {
   /** Your sales pitch / ICP description. Required. */
   pitch: string;
-  /** Anthropic API key for the qualification LLM. Falls back to ANTHROPIC_API_KEY env var. */
-  anthropicApiKey?: string;
-  /** Claude model to use for qualification (default: claude-haiku-4-5-20251001 — fast + cheap) */
+  /** Google Gemini API key for the qualification LLM. Falls back to GEMINI_API_KEY env var. */
+  geminiApiKey?: string;
+  /** Gemini model to use for qualification (default: gemini-2.0-flash — fast + cheap) */
   qualificationModel?: string;
   /** Cal.com API key for meeting booking */
   calApiKey?: string;
@@ -26,7 +26,7 @@ export type LeadQualifierConfig = {
 
 export type ResolvedLeadQualifierConfig = {
   pitch: string;
-  anthropicApiKey: string;
+  geminiApiKey: string;
   qualificationModel: string;
   calApiKey: string | undefined;
   calEventTypeId: string | undefined;
@@ -45,19 +45,19 @@ export function resolveConfig(raw: unknown): ResolvedLeadQualifierConfig {
     throw new Error("lead-qualifier: config.pitch is required");
   }
 
-  const anthropicApiKey =
-    typeof cfg["anthropicApiKey"] === "string"
-      ? cfg["anthropicApiKey"].trim()
-      : (process.env["ANTHROPIC_API_KEY"] ?? "");
+  const geminiApiKey =
+    typeof cfg["geminiApiKey"] === "string"
+      ? cfg["geminiApiKey"].trim()
+      : (process.env["GEMINI_API_KEY"] ?? "");
 
   const qualificationModel =
     typeof cfg["qualificationModel"] === "string"
       ? cfg["qualificationModel"].trim()
-      : "claude-haiku-4-5-20251001";
+      : "gemini-2.0-flash";
 
   return {
     pitch,
-    anthropicApiKey,
+    geminiApiKey,
     qualificationModel,
     calApiKey: typeof cfg["calApiKey"] === "string" ? cfg["calApiKey"].trim() : undefined,
     calEventTypeId:
@@ -104,13 +104,13 @@ export function createConfigSchema() {
           type: "string",
           description: "Your sales pitch / ICP description. Shown to the qualification LLM.",
         },
-        anthropicApiKey: {
+        geminiApiKey: {
           type: "string",
-          description: "Anthropic API key. Falls back to ANTHROPIC_API_KEY env var.",
+          description: "Google Gemini API key. Falls back to GEMINI_API_KEY env var.",
         },
         qualificationModel: {
           type: "string",
-          description: "Claude model for qualification (default: claude-haiku-4-5-20251001).",
+          description: "Gemini model for qualification (default: gemini-2.0-flash).",
         },
         calApiKey: {
           type: "string",

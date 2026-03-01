@@ -5,7 +5,7 @@
   "type": "module",
   "main": "./index.ts",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.37.0",
+    "@google/generative-ai": "^0.24.0",
     "@sinclair/typebox": "0.34.48"
   },
   "devDependencies": {
